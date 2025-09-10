@@ -1,6 +1,17 @@
 import mysql from 'mysql2/promise';
 
+const isOffline = process.env.IS_OFFLINE === 'true';
+const simulateRds = process.env.SIMULATE_RDS === 'true';
+
 export async function withConnection() {
+  if (isOffline || simulateRds) {
+    console.log('[SIMULATE_RDS] conexión simulada');
+    return {
+      async execute() { console.log('[SIMULATE_RDS] execute simulada'); },
+      async end() { }
+    } as any;
+  }
+  // conexión real
   const conn = await mysql.createConnection({
     host: process.env.RDS_HOST,
     port: Number(process.env.RDS_PORT || 3306),
