@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Appointment Service API
+  title: Citas Asegurados Service API
   version: 1.0.0
 paths:
   /appointments:

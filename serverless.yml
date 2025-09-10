@@ -1,4 +1,4 @@
-service: appointment-service
+service: citas-asegurados-service
 frameworkVersion: '3'
 
 plugins:
