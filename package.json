@@ -1,0 +1,31 @@
+{
+  "name": "reto_tecnico",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "deploy": "serverless deploy",
+    "remove": "serverless remove",
+    "dev": "serverless offline",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.634.0",
+    "@aws-sdk/lib-dynamodb": "^3.634.0",
+    "@aws-sdk/client-sns": "^3.634.0",
+    "@aws-sdk/client-sqs": "^3.634.0",
+    "@aws-sdk/client-eventbridge": "^3.634.0",
+    "mysql2": "^3.11.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.137",
+    "@types/jest": "^29.5.12",
+    "jest": "^29.7.0",
+    "serverless": "^3.39.0",
+    "serverless-offline": "^13.8.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.5.4"
+  }
+}

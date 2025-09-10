@@ -1,0 +1,56 @@
+openapi: 3.0.3
+info:
+  title: Appointment Service API
+  version: 1.0.0
+paths:
+  /appointments:
+    post:
+      summary: Crea un agendamiento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [insuredId, scheduleId, countryISO]
+              properties:
+                insuredId:
+                  type: string
+                  example: "01234"
+                scheduleId:
+                  type: integer
+                  example: 100
+                countryISO:
+                  type: string
+                  enum: [PE, CL]
+                centerId: { type: integer, example: 4 }
+                specialtyId: { type: integer, example: 3 }
+                medicId: { type: integer, example: 4 }
+                date: { type: string, example: "2024-09-30T12:30:00Z" }
+      responses:
+        '201':
+          description: Creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { type: string }
+  /appointments/{insuredId}:
+    get:
+      summary: Lista agendamientos por asegurado
+      parameters:
+        - name: insuredId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object

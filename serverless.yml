@@ -1,0 +1,212 @@
+service: appointment-service
+frameworkVersion: '3'
+
+plugins:
+  - serverless-offline
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${env:AWS_REGION, 'us-east-1'}
+  stage: ${env:STAGE, 'dev'}
+  architecture: arm64
+  environment:
+    TABLE_NAME: Appointments
+    TOPIC_ARN: { "Ref": "AppointmentTopic" }
+    BUS_NAME: { "Ref": "AppointmentBus" }
+    CONFIRMATIONS_QUEUE_URL: { "Ref": "ConfirmationsQueue" }
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:Query
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+          Resource:
+            - { "Fn::GetAtt": ["AppointmentsTable", "Arn"] }
+            - { "Fn::Join": ["/", [ { "Fn::GetAtt": ["AppointmentsTable", "Arn"] }, "index", "GSI1" ] ] }
+        - Effect: Allow
+          Action:
+            - sns:Publish
+          Resource: { "Ref": "AppointmentTopic" }
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - { "Fn::GetAtt": ["SQSPE", "Arn"] }
+            - { "Fn::GetAtt": ["SQSCL", "Arn"] }
+            - { "Fn::GetAtt": ["ConfirmationsQueue", "Arn"] }
+        - Effect: Allow
+          Action:
+            - events:PutEvents
+          Resource: "*"
+
+functions:
+  createAppointment:
+    handler: dist/src/handlers/appointment.createAppointment
+    events:
+      - httpApi:
+          path: /appointments
+          method: post
+
+  getAppointments:
+    handler: dist/src/handlers/appointment.getAppointments
+    events:
+      - httpApi:
+          path: /appointments/{insuredId}
+          method: get
+
+  processConfirmations:
+    handler: dist/src/handlers/appointment.processConfirmations
+    events:
+      - sqs:
+          arn: { "Fn::GetAtt": ["ConfirmationsQueue", "Arn"] }
+          batchSize: 10
+
+  appointmentPE:
+    handler: dist/src/handlers/appointment_pe.handler
+    events:
+      - sqs:
+          arn: { "Fn::GetAtt": ["SQSPE", "Arn"] }
+          batchSize: 10
+
+  appointmentCL:
+    handler: dist/src/handlers/appointment_cl.handler
+    events:
+      - sqs:
+          arn: { "Fn::GetAtt": ["SQSCL", "Arn"] }
+          batchSize: 10
+
+  confirmAppointment:
+    handler: dist/src/handlers/appointment.confirmAppointment
+    events:
+      - httpApi:
+          path: /appointments/{id}/confirm
+          method: post
+
+resources:
+  Resources:
+    AppointmentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: Appointments
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: insuredId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: GSI1
+            KeySchema:
+              - AttributeName: insuredId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+    AppointmentTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: appointmentTopic
+
+    SQSPE:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: SQS_PE
+
+    SQSCL:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: SQS_CL
+
+    TopicSubscriptionPE:
+      Type: AWS::SNS::Subscription
+      Properties:
+        Protocol: sqs
+        TopicArn: { "Ref": "AppointmentTopic" }
+        Endpoint: { "Fn::GetAtt": ["SQSPE", "Arn"] }
+        FilterPolicy:
+          countryISO: [ "PE" ]
+        RawMessageDelivery: true
+
+    TopicSubscriptionCL:
+      Type: AWS::SNS::Subscription
+      Properties:
+        Protocol: sqs
+        TopicArn: { "Ref": "AppointmentTopic" }
+        Endpoint: { "Fn::GetAtt": ["SQSCL", "Arn"] }
+        FilterPolicy:
+          countryISO: [ "CL" ]
+        RawMessageDelivery: true
+
+    SQSPolicyPE:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [ { "Ref": "SQSPE" } ]
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal: {"Service": "sns.amazonaws.com" }
+              Action: "sqs:SendMessage"
+              Resource: { "Fn::GetAtt": ["SQSPE", "Arn"] }
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: { "Ref": "AppointmentTopic" }
+
+    SQSPolicyCL:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [ { "Ref": "SQSCL" } ]
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal: {"Service": "sns.amazonaws.com" }
+              Action: "sqs:SendMessage"
+              Resource: { "Fn::GetAtt": ["SQSCL", "Arn"] }
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: { "Ref": "AppointmentTopic" }
+
+    AppointmentBus:
+      Type: AWS::Events::EventBus
+      Properties:
+        Name: AppointmentBus
+
+    ConfirmationsQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: confirmationsQueue
+
+    EventRuleToSQS:
+      Type: AWS::Events::Rule
+      Properties:
+        EventBusName: { "Ref": "AppointmentBus" }
+        EventPattern:
+          source: [ "appointment" ]
+          detail-type: [ "AppointmentConfirmed" ]
+        Targets:
+          - Arn: { "Fn::GetAtt": ["ConfirmationsQueue", "Arn"] }
+            Id: "ToConfirmationsQueueTarget"
+
+    AllowEventBridgeToSQS:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [ { "Ref": "ConfirmationsQueue" } ]
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal: { "Service": "events.amazonaws.com" }
+              Action: "sqs:SendMessage"
+              Resource: { "Fn::GetAtt": ["ConfirmationsQueue", "Arn"] }
