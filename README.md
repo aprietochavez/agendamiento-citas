@@ -1,4 +1,4 @@
-# Citas Asegurados Service (Serverless, Node.js, TypeScript)
+# Agendamiento de cita médica para asegurados (Serverless, Node.js, TypeScript)
 
 Implementación de referencia para el reto de **agendamiento de citas** con AWS.
 

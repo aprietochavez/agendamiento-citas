@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Citas Asegurados Service API
+  title: Agendamiento de cita médica para asegurados
   version: 1.0.0
 paths:
   /appointments:
