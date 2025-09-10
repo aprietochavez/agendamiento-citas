@@ -1,32 +1,36 @@
 openapi: 3.0.3
 info:
-  title: Agendamiento de cita médica para asegurados
-  version: 1.0.0
+  title: Agendamiento de citas
+  version: "1.0.0"
+
 paths:
   /appointments:
     post:
-      summary: Crea un agendamiento
+      summary: Crear cita
+      description: Crea una cita para un asegurado. `scheduleId` identifica el “espacio” (slot); los 4 campos del espacio son opcionales y se envían de forma plana.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [insuredId, scheduleId, countryISO]
-              properties:
-                insuredId:
-                  type: string
-                  example: "01234"
-                scheduleId:
-                  type: integer
-                  example: 100
-                countryISO:
-                  type: string
-                  enum: [PE, CL]
-                centerId: { type: integer, example: 4 }
-                specialtyId: { type: integer, example: 3 }
-                medicId: { type: integer, example: 4 }
-                date: { type: string, example: "2024-09-30T12:30:00Z" }
+              $ref: '#/components/schemas/CreateAppointmentDTO'
+            examples:
+              minimo:
+                summary: Mínimo requerido
+                value:
+                  insuredId: "01234"
+                  scheduleId: 100
+                  countryISO: "PE"
+              completo:
+                summary: Con datos del espacio (opcionales)
+                value:
+                  insuredId: "01234"
+                  scheduleId: 100
+                  countryISO: "PE"
+                  centerId: 4
+                  specialtyId: 3
+                  medicId: 4
+                  date: "2024-09-30T12:30:00Z"
       responses:
         '201':
           description: Creado
@@ -34,17 +38,43 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [id, status]
                 properties:
-                  id: { type: string }
-                  status: { type: string }
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [pending]
+              examples:
+                ejemplo:
+                  value:
+                    id: "81488a85-167d-4162-b5d1-eb5b6215087d"
+                    status: "pending"
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+              examples:
+                insuredId_invalido:
+                  value:
+                    error: "insuredId debe ser 5 dígitos"
+
   /appointments/{insuredId}:
     get:
-      summary: Lista agendamientos por asegurado
+      summary: Listar citas por asegurado
       parameters:
-        - name: insuredId
-          in: path
+        - in: path
+          name: insuredId
           required: true
-          schema: { type: string }
+          schema:
+            type: string
+            pattern: '^[0-9]{5}$'
+          description: Código del asegurado (5 dígitos, puede incluir ceros delante)
       responses:
         '200':
           description: OK
@@ -53,4 +83,71 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
+                  $ref: '#/components/schemas/Appointment'
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+components:
+  schemas:
+    CreateAppointmentDTO:
+      type: object
+      required: [insuredId, scheduleId, countryISO]
+      additionalProperties: false
+      properties:
+        insuredId:
+          type: string
+          description: Código del asegurado (5 dígitos, puede iniciar con cero)
+          pattern: '^[0-9]{5}$'
+        scheduleId:
+          type: number
+          description: Identificador del “espacio” de agenda
+          minimum: 1
+        countryISO:
+          type: string
+          enum: [PE, CL]
+          description: País del asegurado
+        centerId:
+          type: number
+          description: (Opcional) Centro médico del espacio
+        specialtyId:
+          type: number
+          description: (Opcional) Especialidad del espacio
+        medicId:
+          type: number
+          description: (Opcional) Médico del espacio
+        date:
+          type: string
+          format: date-time
+          description: (Opcional) Fecha/hora del espacio (ISO-8601 en UTC, ej. 2024-09-30T12:30:00Z)
+
+    Appointment:
+      type: object
+      required: [id, insuredId, scheduleId, countryISO, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        insuredId:
+          type: string
+          pattern: '^[0-9]{5}$'
+        scheduleId:
+          type: number
+        countryISO:
+          type: string
+          enum: [PE, CL]
+        status:
+          type: string
+          enum: [pending, completed]
+        createdAt:
+          type: string
+          format: date-time
+        centerId: { type: number, nullable: true }
+        specialtyId: { type: number, nullable: true }
+        medicId: { type: number, nullable: true }
+        date: { type: string, format: date-time, nullable: true }

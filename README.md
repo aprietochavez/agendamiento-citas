@@ -1,4 +1,4 @@
-# Agendamiento de cita médica para asegurados (Serverless, Node.js, TypeScript)
+# Agendamiento de citas
 
 Implementación de referencia para el reto de **agendamiento de citas** con AWS.
 
