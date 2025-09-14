@@ -1,20 +1,38 @@
-# dependencias y build
+# Node
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build / bundles
 dist/
-.serverless/
+.esbuild/
 .webpack/
+.serverless/
+.dynamodb/            # si usas serverless-dynamodb-local
 coverage/
+.nyc_output/
 
-# runtime local
-.offline-db.json
-
-# entorno
-.env
-.env.*
-*.local
-
-# IDE/OS
-.vscode/
-.idea/
+# Cachés y temporales
+*.log
+*.tmp
+.tmp/
+.jest-cache/
+jest-cache/
 .DS_Store
 Thumbs.db
+
+# Entornos / secretos locales
+.env
+.env.*
+.offline-db.json      # tu “bd” local de tests/offline, si la usas
+
+# IDE/OS
+.vscode/*
+!.vscode/extensions.json   # (opcional) conserva recomendaciones de extensiones
+.idea/
+*.swp
+
+# Artefactos generados
+swagger.html          # ignóralo si lo generas desde openapi.yaml

@@ -1,153 +1,188 @@
 openapi: 3.0.3
 info:
-  title: Agendamiento de citas
-  version: "1.0.0"
+  title: Agendamiento de Citas API
+  version: 1.0.0
+  description: >
+    API para crear y listar citas. La confirmación se realiza de forma asíncrona
+    (SNS → SQS → RDS → EventBridge → SQS) y actualiza el estado en DynamoDB a "completed".
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/{stage}
+    description: API Gateway desplegada
+    variables:
+      apiId:
+        default: q6pljavrk0
+      region:
+        default: us-east-1
+        enum: [us-east-1, us-west-2, sa-east-1, eu-west-1, eu-central-1, ap-south-1]
+      stage:
+        default: dev
+
+tags:
+  - name: Citas
+    description: Operaciones de creación y consulta de citas
 
 paths:
-  /appointments:
+  /citas:
     post:
-      summary: Crear cita
-      description: Crea una cita para un asegurado. `scheduleId` identifica el “espacio” (slot); los 4 campos del espacio son opcionales y se envían de forma plana.
+      tags: [Citas]
+      operationId: crearCita
+      summary: Crea una nueva cita (estado inicial "pending")
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateAppointmentDTO'
+              $ref: '#/components/schemas/CrearCitaRequest'
             examples:
-              minimo:
-                summary: Mínimo requerido
+              ejemplo:
                 value:
-                  insuredId: "01234"
+                  aseguradoId: "01234"
                   scheduleId: 100
-                  countryISO: "PE"
-              completo:
-                summary: Con datos del espacio (opcionales)
-                value:
-                  insuredId: "01234"
-                  scheduleId: 100
-                  countryISO: "PE"
-                  centerId: 4
-                  specialtyId: 3
-                  medicId: 4
-                  date: "2024-09-30T12:30:00Z"
+                  paisISO: "PE"
       responses:
         '201':
-          description: Creado
+          description: Cita creada
           content:
             application/json:
               schema:
-                type: object
-                required: [id, status]
-                properties:
-                  id:
-                    type: string
-                    format: uuid
-                  status:
-                    type: string
-                    enum: [pending]
+                $ref: '#/components/schemas/Cita'
               examples:
                 ejemplo:
                   value:
-                    id: "81488a85-167d-4162-b5d1-eb5b6215087d"
-                    status: "pending"
+                    citaUuid: "8b2c1f2e-7c24-4a5a-9b4c-6d2e7b1a1b01"
+                    aseguradoId: "01234"
+                    scheduleId: 100
+                    paisISO: "PE"
+                    estado: "pending"
+                    fechaCreacion: "2025-09-13T14:12:00.000Z"
         '400':
           description: Error de validación
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error: { type: string }
+                $ref: '#/components/schemas/ErrorResponse'
               examples:
-                insuredId_invalido:
-                  value:
-                    error: "insuredId debe ser 5 dígitos"
+                faltanCampos:
+                  value: { error: "aseguradoId, scheduleId y paisISO son requeridos" }
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
-  /appointments/{insuredId}:
+  /citas/{aseguradoId}:
     get:
-      summary: Listar citas por asegurado
+      tags: [Citas]
+      operationId: listarPorAsegurado
+      summary: Lista las citas de un asegurado
       parameters:
         - in: path
-          name: insuredId
+          name: aseguradoId
           required: true
+          description: Código del asegurado (5 dígitos, con ceros a la izquierda si aplica)
           schema:
             type: string
-            pattern: '^[0-9]{5}$'
-          description: Código del asegurado (5 dígitos, puede incluir ceros delante)
+            pattern: '^\d{5}$'
+          example: "01234"
       responses:
         '200':
-          description: OK
+          description: Lista de citas del asegurado
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Appointment'
+                  $ref: '#/components/schemas/Cita'
+              examples:
+                ejemplo:
+                  value:
+                    - citaUuid: "8b2c1f2e-7c24-4a5a-9b4c-6d2e7b1a1b01"
+                      aseguradoId: "01234"
+                      scheduleId: 100
+                      paisISO: "PE"
+                      estado: "completed"
+                      fechaCreacion: "2025-09-13T14:12:00.000Z"
         '400':
-          description: Error de validación
+          description: Error de validación de parámetros
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error: { type: string }
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalido:
+                  value: { error: "aseguradoId requerido" }
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   schemas:
-    CreateAppointmentDTO:
+    CrearCitaRequest:
       type: object
-      required: [insuredId, scheduleId, countryISO]
-      additionalProperties: false
+      required: [aseguradoId, scheduleId, paisISO]
       properties:
-        insuredId:
+        aseguradoId:
           type: string
-          description: Código del asegurado (5 dígitos, puede iniciar con cero)
-          pattern: '^[0-9]{5}$'
+          description: Código del asegurado (5 dígitos)
+          pattern: '^\d{5}$'
+          example: "01234"
         scheduleId:
-          type: number
-          description: Identificador del “espacio” de agenda
-          minimum: 1
-        countryISO:
+          type: integer
+          description: Identificador del espacio a agendar
+          example: 100
+        paisISO:
           type: string
+          description: Identificador de país
           enum: [PE, CL]
-          description: País del asegurado
-        centerId:
-          type: number
-          description: (Opcional) Centro médico del espacio
-        specialtyId:
-          type: number
-          description: (Opcional) Especialidad del espacio
-        medicId:
-          type: number
-          description: (Opcional) Médico del espacio
-        date:
-          type: string
-          format: date-time
-          description: (Opcional) Fecha/hora del espacio (ISO-8601 en UTC, ej. 2024-09-30T12:30:00Z)
+          example: PE
 
-    Appointment:
+    Cita:
       type: object
-      required: [id, insuredId, scheduleId, countryISO, status, createdAt]
+      required:
+        - citaUuid
+        - aseguradoId
+        - scheduleId
+        - paisISO
+        - estado
+        - fechaCreacion
       properties:
-        id:
+        citaUuid:
           type: string
           format: uuid
-        insuredId:
+          description: Identificador único de la cita
+          example: "8b2c1f2e-7c24-4a5a-9b4c-6d2e7b1a1b01"
+        aseguradoId:
           type: string
-          pattern: '^[0-9]{5}$'
+          description: Código del asegurado (5 dígitos)
+          pattern: '^\d{5}$'
+          example: "01234"
         scheduleId:
-          type: number
-        countryISO:
+          type: integer
+          description: Identificador del espacio a agendar
+          example: 100
+        paisISO:
           type: string
+          description: Código de país ISO
           enum: [PE, CL]
-        status:
+          example: PE
+        estado:
           type: string
+          description: Estado de la cita
           enum: [pending, completed]
-        createdAt:
+          example: pending
+        fechaCreacion:
           type: string
           format: date-time
-        centerId: { type: number, nullable: true }
-        specialtyId: { type: number, nullable: true }
-        medicId: { type: number, nullable: true }
-        date: { type: string, format: date-time, nullable: true }
+          description: Fecha de creación en ISO 8601 (UTC)
+          example: "2025-09-13T14:12:00.000Z"
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

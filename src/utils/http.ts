@@ -1,23 +1,3 @@
-export const ok = (body: unknown) => ({
-  statusCode: 200,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body)
-});
-
-export const created = (body: unknown) => ({
-  statusCode: 201,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body)
-});
-
-export const badRequest = (message: string) => ({
-  statusCode: 400,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ error: message })
-});
-
-export const serverError = (message: string) => ({
-  statusCode: 500,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ error: message })
-});
+export const ok = (b: unknown) => ({ statusCode: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
+export const created = (b: unknown) => ({ statusCode: 201, headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
+export const bad = (m: string) => ({ statusCode: 400, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: m }) });

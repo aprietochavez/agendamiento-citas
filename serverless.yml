@@ -2,7 +2,7 @@ service: agendamiento-citas
 frameworkVersion: '3'
 
 plugins:
-  - serverless-offline
+  - serverless-esbuild
 
 provider:
   name: aws
@@ -11,11 +11,19 @@ provider:
   stage: ${env:STAGE, 'dev'}
   architecture: arm64
   environment:
-    TABLE_NAME: Appointments
-    TOPIC_ARN: { "Ref": "AppointmentTopic" }
-    BUS_NAME: { "Ref": "AppointmentBus" }
-    CONFIRMATIONS_QUEUE_URL: { "Ref": "ConfirmationsQueue" }
-
+    TABLE_CITAS: Citas
+    RDS_PE_HOST: rds-pe.ckb0ayg62mzv.us-east-1.rds.amazonaws.com
+    RDS_PE_PORT: "3306"
+    RDS_PE_DATABASE: citas-pe
+    RDS_CL_HOST: rds-cl.ckb0ayg62mzv.us-east-1.rds.amazonaws.com
+    RDS_CL_PORT: "3306"
+    RDS_CL_DATABASE: citas-cl
+    RDS_USER: admin
+    RDS_PASSWORD_SSM: /citas/${sls:stage}/rds/password
+    SNS_CITAS_ARN:
+      Ref: CitaTopic
+    EB_BUS_NAME:
+      Ref: CitaBus
   iam:
     role:
       statements:
@@ -26,12 +34,18 @@ provider:
             - dynamodb:GetItem
             - dynamodb:UpdateItem
           Resource:
-            - { "Fn::GetAtt": ["AppointmentsTable", "Arn"] }
-            - { "Fn::Join": ["/", [ { "Fn::GetAtt": ["AppointmentsTable", "Arn"] }, "index", "GSI1" ] ] }
+            - Fn::GetAtt:
+                - CitasTable
+                - Arn
+            - Fn::Join:
+                - '/'
+                - - Fn::GetAtt: [ CitasTable, Arn ]
+                  - index
+                  - porAsegurado
         - Effect: Allow
-          Action:
-            - sns:Publish
-          Resource: { "Ref": "AppointmentTopic" }
+          Action: sns:Publish
+          Resource:
+            Ref: CitaTopic
         - Effect: Allow
           Action:
             - sqs:SendMessage
@@ -39,174 +53,217 @@ provider:
             - sqs:DeleteMessage
             - sqs:GetQueueAttributes
           Resource:
-            - { "Fn::GetAtt": ["SQSPE", "Arn"] }
-            - { "Fn::GetAtt": ["SQSCL", "Arn"] }
-            - { "Fn::GetAtt": ["ConfirmationsQueue", "Arn"] }
+            - Fn::GetAtt: [ SQSPE, Arn ]
+            - Fn::GetAtt: [ SQSCL, Arn ]
+            - Fn::GetAtt: [ ConfirmationsQueue, Arn ]
+        - Effect: Allow
+          Action: events:PutEvents
+          Resource: "*"
         - Effect: Allow
           Action:
-            - events:PutEvents
-          Resource: "*"
+            - ssm:GetParameter
+          Resource:
+            - arn:aws:ssm:${self:provider.region}:${aws:accountId}:parameter/citas/${sls:stage}/rds/password
+        - Effect: Allow
+          Action:
+            - kms:Decrypt
+          Resource:
+            - arn:aws:kms:${self:provider.region}:${aws:accountId}:alias/aws/ssm
 
 functions:
-  createAppointment:
-    handler: dist/src/handlers/appointment.createAppointment
+  crearCita:
+    handler: src/handlers/cita.crearCita
     events:
       - httpApi:
-          path: /appointments
+          path: /citas
           method: post
 
-  getAppointments:
-    handler: dist/src/handlers/appointment.getAppointments
+  listarPorAsegurado:
+    handler: src/handlers/cita.listarPorAsegurado
     events:
       - httpApi:
-          path: /appointments/{insuredId}
+          path: /citas/{aseguradoId}
           method: get
 
-  processConfirmations:
-    handler: dist/src/handlers/appointment.processConfirmations
+  confirmarCita:
+    handler: src/handlers/cita.confirmarCita
     events:
       - sqs:
-          arn: { "Fn::GetAtt": ["ConfirmationsQueue", "Arn"] }
+          arn:
+            Fn::GetAtt: [ ConfirmationsQueue, Arn ]
           batchSize: 10
 
-  appointmentPE:
-    handler: dist/src/handlers/appointment_pe.handler
+  citaPE:
+    handler: src/handlers/cita_pe.handler
     events:
       - sqs:
-          arn: { "Fn::GetAtt": ["SQSPE", "Arn"] }
+          arn:
+            Fn::GetAtt: [ SQSPE, Arn ]
           batchSize: 10
+    timeout: 30
+    memorySize: 512
 
-  appointmentCL:
-    handler: dist/src/handlers/appointment_cl.handler
+  citaCL:
+    handler: src/handlers/cita_cl.handler
     events:
       - sqs:
-          arn: { "Fn::GetAtt": ["SQSCL", "Arn"] }
+          arn:
+            Fn::GetAtt: [ SQSCL, Arn ]
           batchSize: 10
+    timeout: 30
+    memorySize: 512
 
-  confirmAppointment:
-    handler: dist/src/handlers/appointment.confirmAppointment
-    events:
-      - httpApi:
-          path: /appointments/{id}/confirm
-          method: post
+custom:
+  esbuild:
+    bundle: true
+    minify: false
+    sourcemap: false
+    target: node20
+    platform: node
+    external: []
+    exclude: []
+    keepOutputDirectory: true
+    concurrency: 10
 
 resources:
   Resources:
-    AppointmentsTable:
+    CitasTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: Appointments
+        TableName: Citas
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
-          - AttributeName: id
+          - AttributeName: citaUuid
             AttributeType: S
-          - AttributeName: insuredId
+          - AttributeName: aseguradoId
             AttributeType: S
         KeySchema:
-          - AttributeName: id
+          - AttributeName: citaUuid
             KeyType: HASH
         GlobalSecondaryIndexes:
-          - IndexName: GSI1
+          - IndexName: porAsegurado
             KeySchema:
-              - AttributeName: insuredId
+              - AttributeName: aseguradoId
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
 
-    AppointmentTopic:
+    CitaTopic:
       Type: AWS::SNS::Topic
       Properties:
-        TopicName: appointmentTopic
+        TopicName: citaTopic-${sls:stage}
 
     SQSPE:
       Type: AWS::SQS::Queue
       Properties:
-        QueueName: SQS_PE
+        QueueName: citas-pe-${sls:stage}
 
     SQSCL:
       Type: AWS::SQS::Queue
       Properties:
-        QueueName: SQS_CL
+        QueueName: citas-cl-${sls:stage}
 
     TopicSubscriptionPE:
       Type: AWS::SNS::Subscription
       Properties:
         Protocol: sqs
-        TopicArn: { "Ref": "AppointmentTopic" }
-        Endpoint: { "Fn::GetAtt": ["SQSPE", "Arn"] }
+        TopicArn:
+          Ref: CitaTopic
+        Endpoint:
+          Fn::GetAtt: [ SQSPE, Arn ]
         FilterPolicy:
-          countryISO: [ "PE" ]
+          paisISO:
+            - PE
         RawMessageDelivery: true
 
     TopicSubscriptionCL:
       Type: AWS::SNS::Subscription
       Properties:
         Protocol: sqs
-        TopicArn: { "Ref": "AppointmentTopic" }
-        Endpoint: { "Fn::GetAtt": ["SQSCL", "Arn"] }
+        TopicArn:
+          Ref: CitaTopic
+        Endpoint:
+          Fn::GetAtt: [ SQSCL, Arn ]
         FilterPolicy:
-          countryISO: [ "CL" ]
+          paisISO:
+            - CL
         RawMessageDelivery: true
 
     SQSPolicyPE:
       Type: AWS::SQS::QueuePolicy
       Properties:
-        Queues: [ { "Ref": "SQSPE" } ]
+        Queues:
+          - Ref: SQSPE
         PolicyDocument:
-          Version: "2012-10-17"
+          Version: '2012-10-17'
           Statement:
             - Effect: Allow
-              Principal: {"Service": "sns.amazonaws.com" }
-              Action: "sqs:SendMessage"
-              Resource: { "Fn::GetAtt": ["SQSPE", "Arn"] }
+              Principal:
+                Service: sns.amazonaws.com
+              Action: sqs:SendMessage
+              Resource:
+                Fn::GetAtt: [ SQSPE, Arn ]
               Condition:
                 ArnEquals:
-                  aws:SourceArn: { "Ref": "AppointmentTopic" }
+                  aws:SourceArn:
+                    Ref: CitaTopic
 
     SQSPolicyCL:
       Type: AWS::SQS::QueuePolicy
       Properties:
-        Queues: [ { "Ref": "SQSCL" } ]
+        Queues:
+          - Ref: SQSCL
         PolicyDocument:
-          Version: "2012-10-17"
+          Version: '2012-10-17'
           Statement:
             - Effect: Allow
-              Principal: {"Service": "sns.amazonaws.com" }
-              Action: "sqs:SendMessage"
-              Resource: { "Fn::GetAtt": ["SQSCL", "Arn"] }
+              Principal:
+                Service: sns.amazonaws.com
+              Action: sqs:SendMessage
+              Resource:
+                Fn::GetAtt: [ SQSCL, Arn ]
               Condition:
                 ArnEquals:
-                  aws:SourceArn: { "Ref": "AppointmentTopic" }
+                  aws:SourceArn:
+                    Ref: CitaTopic
 
-    AppointmentBus:
+    CitaBus:
       Type: AWS::Events::EventBus
       Properties:
-        Name: AppointmentBus
+        Name: CitaBus
 
     ConfirmationsQueue:
       Type: AWS::SQS::Queue
       Properties:
-        QueueName: confirmationsQueue
+        QueueName: citas-confirmaciones-${sls:stage}
 
     EventRuleToSQS:
       Type: AWS::Events::Rule
       Properties:
-        EventBusName: { "Ref": "AppointmentBus" }
+        EventBusName:
+          Ref: CitaBus
         EventPattern:
-          source: [ "appointment" ]
-          detail-type: [ "AppointmentConfirmed" ]
+          source:
+            - cita.pe
+            - cita.cl
+          detail-type:
+            - CitaConfirmada
         Targets:
-          - Arn: { "Fn::GetAtt": ["ConfirmationsQueue", "Arn"] }
-            Id: "ToConfirmationsQueueTarget"
+          - Arn:
+              Fn::GetAtt: [ ConfirmationsQueue, Arn ]
+            Id: ToConfirmationsQueueTarget
 
     AllowEventBridgeToSQS:
       Type: AWS::SQS::QueuePolicy
       Properties:
-        Queues: [ { "Ref": "ConfirmationsQueue" } ]
+        Queues:
+          - Ref: ConfirmationsQueue
         PolicyDocument:
-          Version: "2012-10-17"
+          Version: '2012-10-17'
           Statement:
             - Effect: Allow
-              Principal: { "Service": "events.amazonaws.com" }
-              Action: "sqs:SendMessage"
-              Resource: { "Fn::GetAtt": ["ConfirmationsQueue", "Arn"] }
+              Principal:
+                Service: events.amazonaws.com
+              Action: sqs:SendMessage
+              Resource:
+                Fn::GetAtt: [ ConfirmationsQueue, Arn ]
